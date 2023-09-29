@@ -7,12 +7,35 @@ echo "Checking for Dependencies..."
 if ! command -v python3 &> /dev/null
 then
     echo "python3 not found"
-    return
+    exit
 fi
 
 # Check commands
 ANYMISSING=0
-for dependency in kind openssl docker docker-compose kubectl helm
+DOCKERMISSING=0
+PODMANMISSING=0
+
+# Check to see if either docker or podman exists
+for dependency in docker docker-compose podman podman-compose
+do
+    if ! command -v $dependency &> /dev/null
+    then
+	if [ $dependency = "docker" ] || [ $dependency = "docker-compose" ]
+    then
+        DOCKERMISSING=1
+	fi
+	if [ $dependency = "podman" ] || [ $dependency = "podman-compose" ]
+	then
+        PODMANMISSING=1
+	fi
+        if [ $DOCKERMISSING -eq 1 ] && [ $PODMANMISSING -eq 1 ]
+	then
+        ANYMISSING=1
+	fi
+    fi
+done
+
+for dependency in kind openssl kubectl helm yq
 do
     if ! command -v $dependency &> /dev/null
     then
@@ -26,29 +49,29 @@ done
 if [ $ANYMISSING -eq 1 ]
 then
     echo "Dependencies not found. Please install and add to path and rerun."
-    return
+    exit
 fi
 
 # Check $KONG_LICENSE
 if [[ -z "${KONG_LICENSE}" ]]; then
     echo "The environment variable KONG_LICENSE needs to be defined."
-    return
+    exit
 fi
 if [ ! -f $KONG_LICENSE ]; then
     echo "$KONG_LICENSE does not exist."
-    return
+    exit
 fi
 
 # Check $KONG_HOSTNAME
 if [[ -z "${KONG_HOSTNAME}" ]] | [[ "${KONG_HOSTNAME}" = "localhost" ]]; then
     echo "The environment variable KONG_HOSTNAME is not defined or set to localhost."
     export KONG_HOSTNAME="localhost"
-    yq e -i '.env.admin_gui_url = "http://localhost:30002"' ./helm-values/cp-values.yaml
-    yq e -i '.env.admin_api_url = "http://localhost:30001"' ./helm-values/cp-values.yaml
-    yq e -i '.env.admin_api_uri = "localhost:30001"' ./helm-values/cp-values.yaml
-    yq e -i '.env.proxy_url = "http://localhost:30000"' ./helm-values/cp-values.yaml
-    yq e -i '.env.portal_api_url = "http://localhost:30004"' ./helm-values/cp-values.yaml
-    yq e -i '.env.portal_gui_host = "localhost:30003"' ./helm-values/cp-values.yaml
+    yq -Y -i '.env.admin_gui_url = "http://localhost:30002"' ./helm-values/cp-values.yaml
+    yq -Y -i '.env.admin_api_url = "http://localhost:30001"' ./helm-values/cp-values.yaml
+    yq -Y -i '.env.admin_api_uri = "localhost:30001"' ./helm-values/cp-values.yaml
+    yq -Y -i '.env.proxy_url = "http://localhost:30000"' ./helm-values/cp-values.yaml
+    yq -Y -i '.env.portal_api_url = "http://localhost:30004"' ./helm-values/cp-values.yaml
+    yq -Y -i '.env.portal_gui_host = "localhost:30003"' ./helm-values/cp-values.yaml
     if [ "$(uname)" == "Darwin" ]; then
         sed -i '' "/KONG_HOSTNAME/d" ./kind/kind-config.yaml
     elif [ "$(expr substr $(uname -s) 1 5)" == "Linux" ]; then
@@ -56,12 +79,12 @@ if [[ -z "${KONG_HOSTNAME}" ]] | [[ "${KONG_HOSTNAME}" = "localhost" ]]; then
     fi
 else
     echo "Using $KONG_HOSTNAME as the hostname."
-    yq e -i ".env.admin_gui_url = \"http://$KONG_HOSTNAME:30002\"" ./helm-values/cp-values.yaml
-    yq e -i ".env.admin_api_url = \"http://$KONG_HOSTNAME:30001\"" ./helm-values/cp-values.yaml
-    yq e -i ".env.admin_api_uri = \"$KONG_HOSTNAME:30001\"" ./helm-values/cp-values.yaml
-    yq e -i ".env.proxy_url = \"http://$KONG_HOSTNAME:30000\"" ./helm-values/cp-values.yaml
-    yq e -i ".env.portal_api_url = \"http://$KONG_HOSTNAME:30004\"" ./helm-values/cp-values.yaml
-    yq e -i ".env.portal_gui_host = \"$KONG_HOSTNAME:30003\"" ./helm-values/cp-values.yaml
+    yq -Y -i ".env.admin_gui_url = \"http://$KONG_HOSTNAME:30002\"" ./helm-values/cp-values.yaml
+    yq -Y -i ".env.admin_api_url = \"http://$KONG_HOSTNAME:30001\"" ./helm-values/cp-values.yaml
+    yq -Y -i ".env.admin_api_uri = \"$KONG_HOSTNAME:30001\"" ./helm-values/cp-values.yaml
+    yq -Y -i ".env.proxy_url = \"http://$KONG_HOSTNAME:30000\"" ./helm-values/cp-values.yaml
+    yq -Y -i ".env.portal_api_url = \"http://$KONG_HOSTNAME:30004\"" ./helm-values/cp-values.yaml
+    yq -Y -i ".env.portal_gui_host = \"$KONG_HOSTNAME:30003\"" ./helm-values/cp-values.yaml
     if [ "$(uname)" == "Darwin" ]; then
         sed -i '' "s/KONG_HOSTNAME/$KONG_HOSTNAME/g" ./kind/kind-config.yaml
     elif [ "$(expr substr $(uname -s) 1 5)" == "Linux" ]; then
@@ -140,7 +163,14 @@ CURRENTDIR=`pwd`
 
 # Deploy Keycloak IDP Container
 cd ./keycloak-idp
-docker-compose up -d
+
+# call the correct compose command for docker or podman
+if [ $DOCKERMISSING = 1 ]
+then
+    podman-compose up -d
+else
+    docker-compose up -d
+fi
 
 # Change back to directory
 cd $CURRENTDIR
