@@ -1,5 +1,30 @@
 #!/usr/bin/env bash
 
+# Set some base variables
+ANYMISSING=0
+DOCKERMISSING=0
+PODMANMISSING=0
+
+# Determine what architecture we are running on (MacOS or Linux)
+unameOut="$(uname -s)"
+case "${unameOut}" in
+    Linux*)     machine=Linux;;
+    Darwin*)    machine=Mac;;
+    CYGWIN*)    machine=Cygwin;;
+    MINGW*)     machine=MinGw;;
+    MSYS_NT*)   machine=Git;;
+    *)          machine="UNKNOWN:${unameOut}"
+esac
+echo ${machine}
+
+# yq has different options on different architectures. Set up the options appropriately
+if $machine == "Mac"
+then
+    yq_opts = "e"
+else
+    yq_opts = "-Y"
+fi
+
 # Check for Dependencies
 echo "Checking for Dependencies..."
 
@@ -9,11 +34,6 @@ then
     echo "python3 not found"
     exit
 fi
-
-# Check commands
-ANYMISSING=0
-DOCKERMISSING=0
-PODMANMISSING=0
 
 # Check to see if either docker or podman exists
 for dependency in docker docker-compose podman podman-compose
@@ -35,6 +55,7 @@ do
     fi
 done
 
+# Check remaining command dependencies
 for dependency in kind openssl kubectl helm yq
 do
     if ! command -v $dependency &> /dev/null
@@ -66,12 +87,12 @@ fi
 if [[ -z "${KONG_HOSTNAME}" ]] | [[ "${KONG_HOSTNAME}" = "localhost" ]]; then
     echo "The environment variable KONG_HOSTNAME is not defined or set to localhost."
     export KONG_HOSTNAME="localhost"
-    yq -Y -i '.env.admin_gui_url = "http://localhost:30002"' ./helm-values/cp-values.yaml
-    yq -Y -i '.env.admin_api_url = "http://localhost:30001"' ./helm-values/cp-values.yaml
-    yq -Y -i '.env.admin_api_uri = "localhost:30001"' ./helm-values/cp-values.yaml
-    yq -Y -i '.env.proxy_url = "http://localhost:30000"' ./helm-values/cp-values.yaml
-    yq -Y -i '.env.portal_api_url = "http://localhost:30004"' ./helm-values/cp-values.yaml
-    yq -Y -i '.env.portal_gui_host = "localhost:30003"' ./helm-values/cp-values.yaml
+    yq $yq_opts -i '.env.admin_gui_url = "http://localhost:30002"' ./helm-values/cp-values.yaml
+    yq $yq_opts -i '.env.admin_api_url = "http://localhost:30001"' ./helm-values/cp-values.yaml
+    yq $yq_opts -i '.env.admin_api_uri = "localhost:30001"' ./helm-values/cp-values.yaml
+    yq $yq_opts -i '.env.proxy_url = "http://localhost:30000"' ./helm-values/cp-values.yaml
+    yq $yq_opts -i '.env.portal_api_url = "http://localhost:30004"' ./helm-values/cp-values.yaml
+    yq $yq_opts -i '.env.portal_gui_host = "localhost:30003"' ./helm-values/cp-values.yaml
     if [ "$(uname)" == "Darwin" ]; then
         sed -i '' "/KONG_HOSTNAME/d" ./kind/kind-config.yaml
     elif [ "$(expr substr $(uname -s) 1 5)" == "Linux" ]; then
@@ -79,12 +100,12 @@ if [[ -z "${KONG_HOSTNAME}" ]] | [[ "${KONG_HOSTNAME}" = "localhost" ]]; then
     fi
 else
     echo "Using $KONG_HOSTNAME as the hostname."
-    yq -Y -i ".env.admin_gui_url = \"http://$KONG_HOSTNAME:30002\"" ./helm-values/cp-values.yaml
-    yq -Y -i ".env.admin_api_url = \"http://$KONG_HOSTNAME:30001\"" ./helm-values/cp-values.yaml
-    yq -Y -i ".env.admin_api_uri = \"$KONG_HOSTNAME:30001\"" ./helm-values/cp-values.yaml
-    yq -Y -i ".env.proxy_url = \"http://$KONG_HOSTNAME:30000\"" ./helm-values/cp-values.yaml
-    yq -Y -i ".env.portal_api_url = \"http://$KONG_HOSTNAME:30004\"" ./helm-values/cp-values.yaml
-    yq -Y -i ".env.portal_gui_host = \"$KONG_HOSTNAME:30003\"" ./helm-values/cp-values.yaml
+    yq $yq_opts -i ".env.admin_gui_url = \"http://$KONG_HOSTNAME:30002\"" ./helm-values/cp-values.yaml
+    yq $yq_opts -i ".env.admin_api_url = \"http://$KONG_HOSTNAME:30001\"" ./helm-values/cp-values.yaml
+    yq $yq_opts -i ".env.admin_api_uri = \"$KONG_HOSTNAME:30001\"" ./helm-values/cp-values.yaml
+    yq $yq_opts -i ".env.proxy_url = \"http://$KONG_HOSTNAME:30000\"" ./helm-values/cp-values.yaml
+    yq $yq_opts -i ".env.portal_api_url = \"http://$KONG_HOSTNAME:30004\"" ./helm-values/cp-values.yaml
+    yq $yq_opts -i ".env.portal_gui_host = \"$KONG_HOSTNAME:30003\"" ./helm-values/cp-values.yaml
     if [ "$(uname)" == "Darwin" ]; then
         sed -i '' "s/KONG_HOSTNAME/$KONG_HOSTNAME/g" ./kind/kind-config.yaml
     elif [ "$(expr substr $(uname -s) 1 5)" == "Linux" ]; then
